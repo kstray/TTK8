@@ -1,0 +1,10 @@
+sample:
+  name: mqtt simple sample
+tests:
+  samples.nrf9160.mqtt_simple:
+    build_only: true
+    build_on_all: true
+    platform_allow: actinius_icarus_ns
+    integration_platforms:
+      - actinius_icarus_ns
+    tags: ci_build

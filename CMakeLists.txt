@@ -10,4 +10,9 @@ list(APPEND mcuboot_OVERLAY_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_overlay-
 find_package(Zephyr)
 project(gps)
 
-target_sources(app PRIVATE src/main.c)
+zephyr_include_directories(include)
+
+FILE(GLOB app_sources src/*.c)
+target_sources(app PRIVATE ${app_sources})
+target_include_directories(app PUBLIC include)
+

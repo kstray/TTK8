@@ -122,7 +122,7 @@ void mqtt_evt_handler(struct mqtt_client *client, const struct mqtt_evt *evt) {
         if (err >= 0) {
             printk("Data received: %hhn", payload_buf);
             // Echo back received data
-            publish(&client_ctx, MQTT_QOS_1_AT_LEAST_ONCE);
+            publish(&client_ctx, MQTT_QOS_1_AT_LEAST_ONCE, payload_buf, p->message.payload.len);
         } else {
             printk("publish_get_payload failed: %d\n", err);
             printk("Disconnecting MQTT client...\n");

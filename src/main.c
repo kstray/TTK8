@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2018 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
 
 #include <zephyr.h>
 #include <stdio.h>
@@ -9,16 +14,12 @@
 #include <modem/at_cmd.h>
 #include <modem/lte_lc.h>
 #include <logging/log.h>
-#if defined(CONFIG_MODEM_KEY_MGMT)
 #include <modem/modem_key_mgmt.h>
-#endif
 
-/*
-#define APP_CONNECT_TIMEOUT_MS	2000
-#define APP_SLEEP_MSECS		    500
-#define APP_CONNECT_TRIES       10
-#deinfe APP_MAX_ITERATIONS      500
-*/
+#include "certificates.h"
+#include "gpio_button.h"
+#include "gps_conn.h"
+
 
 // Buffers for MQTT client
 static uint8_t rx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
@@ -35,7 +36,21 @@ static struct sockaddr_storage broker;
 static struct pollfd fds;
 
 
-//static bool connected;
+
+static int certificates_provision(void) {
+    int err = 0;
+    printk("Provisioning certificates\n");
+    err = modem_key_mgmt_write(CONFIG_MQTT_TLS_SEC_TAG,
+                    MODEM_KEY_MGMT_CRED_TYPE_CA_CHAIN,
+                    CA_CERTIFICATE,
+                    strlen(CA_CERTIFICATE));
+    if (err) {
+        printk("Failed to provision CA certificate: %d", err);
+        return err;
+    }
+
+    return err;
+}
 
 
 
@@ -120,7 +135,8 @@ void mqtt_evt_handler(struct mqtt_client *client, const struct mqtt_evt *evt) {
         }
 
         if (err >= 0) {
-            printk("Data received: %hhn", payload_buf);
+            payload_buf[p->message.payload.len] = '\0';
+            printk("Data received: %s\n", payload_buf);
             // Echo back received data
             publish(&client_ctx, MQTT_QOS_1_AT_LEAST_ONCE, payload_buf, p->message.payload.len);
         } else {
@@ -251,7 +267,7 @@ static int client_init(struct mqtt_client *client) {
 		return err;
 	}
 
-    // MQTT client config
+    /* MQTT client config */
     client->broker = &broker;
     client->evt_cb = mqtt_evt_handler;
     client->client_id.utf8 = (uint8_t *)"zephyr_mqtt_client";
@@ -259,20 +275,38 @@ static int client_init(struct mqtt_client *client) {
     client->password = NULL;
     client->user_name = NULL;
     client->protocol_version = MQTT_VERSION_3_1_1;
-    client->transport.type = MQTT_TRANSPORT_NON_SECURE;
 
-    // MQTT buffers config
+    /* MQTT buffers config */
     client->rx_buf = rx_buffer;
     client->rx_buf_size = sizeof(rx_buffer);
     client->tx_buf = tx_buffer;
     client->tx_buf_size = sizeof(tx_buffer);
 
+    /* MQTT transport config */
+    struct mqtt_sec_config *tls_cfg = &(client->transport).tls.config;
+    static sec_tag_t sec_tag_list[] = { CONFIG_MQTT_TLS_SEC_TAG };
+
+    printk("TLS enabled\n");
+    client->transport.type = MQTT_TRANSPORT_SECURE;
+
+    tls_cfg->peer_verify = CONFIG_MQTT_TLS_PEER_VERIFY;
+    tls_cfg->cipher_count = 0;
+    tls_cfg->cipher_list = NULL;
+    tls_cfg->sec_tag_count = ARRAY_SIZE(sec_tag_list);
+    tls_cfg->sec_tag_list = sec_tag_list;
+    tls_cfg->hostname = CONFIG_MQTT_BROKER_HOSTNAME;
+    tls_cfg->session_cache = IS_ENABLED(CONFIG_MQTT_TLS_SESSION_CACHING) ?
+                        TLS_SESSION_CACHE_ENABLED :
+                        TLS_SESSION_CACHE_DISABLED;
+
+
     return err;
 }
 
+
 static int fds_init(struct mqtt_client *client) {
-    if (client->transport.type == MQTT_TRANSPORT_NON_SECURE) {
-        fds.fd = client->transport.tcp.sock;
+    if (client->transport.type == MQTT_TRANSPORT_SECURE) {
+        fds.fd = client->transport.tls.sock;
     } else {
         return -ENOTSUP;
     }
@@ -282,140 +316,49 @@ static int fds_init(struct mqtt_client *client) {
     return 0;
 }
 
-/*
-static int try_to_connect(struct mqtt_client *client) {
-    int rc, i = 0;
+static int modem_configure(void) {
+    printk("Disabling PSM and eDRX\n");
+    lte_lc_psm_req(false);
+    lte_lc_edrx_req(false);
 
-    while ((i++ < APP_CONNECT_TRIES) && !connected) {
-        client_init(client);
-
-        rc = mqtt_connect(client);
-        if (rc != 0) {
-            printk("mqtt_connect %d\n", rc);
-            k_sleep(K_MSEC(APP_SLEEP_MSECS));
-            continue;
-        }
-
-        // ???
-        fds[0].fd = client_ctx.transport.tcp.sock;
-        fds[0].events = ZSOCK_POLLIN;
-
-        if (wait(APP_CONNECT_TIMEOUT_MS)) {
-            mqtt_input(client);
-        }
-
-        if (!connected) {
-            mqtt_abort(client);
-        }
+    int err;
+    printk("LTE Link Connecting...\n");
+    err = lte_lc_init_and_connect();
+    if (err) {
+        printk("Failed to establish LTE connection: %d\n", err);
+        return err;
     }
-
-    if (connected) {
-        return 0;
-    }
-
-    return -EINVAL;
-}
-
-
-static int process_mqtt_and_sleep(struct mqtt_client *client, int timeout) {
-    int64_t remaining = timeout;
-    int64_t start_time = k_uptime_get();
-    int rc;
-
-    while ((remaining > 0) && connected) {
-        if (wait(remaining)) {
-            rc = mqtt_input(client);
-            if (rc != 0) {
-                printk("mqtt_input %d\n", rc);
-                return rc;
-            }
-        }
-
-        rc = mqtt_live(client);
-        if ((rc != 0) && (rc != -EAGAIN)) {
-            printk("mqtt_live %d\n", rc);
-            return rc;
-        } else if (rc == 0) {
-            rc = mqtt_input(client);
-            if (rc != 0) {
-                printk("mqtt_input %d\n", rc);
-                return rc;
-            }
-        }
-
-        remaining = timeout + start_time - k_uptime_get();
-    }
+    printk("LTE Link Connected/n");
 
     return 0;
 }
 
 
-static int publisher(void) {
-    int i, rc, r = 0;
-
-    printk("Attempting to connect: ");
-    rc = try_to_connect(&client_ctx);
-    printk("try_to_connect %d\n", rc);
-    if (rc != 0) {
-        return 1;
-    }
-
-    i = 0;
-    while ((i++ < APP_MAX_ITERATIONS) && connected) {
-        r = -1;
-
-        rc = mqtt_ping(&client_ctx);
-        printk("mqtt_ping %d\n", rc);
-        if (rc != 0) {
-            break;
-        }
-
-        rc = process_mqtt_and_sleep(&client_ctx, APP_SLEEP_MSECS);
-        if (rc != 0) {
-            break;
-        }
-
-        rc = publish(&client_ctx, MQQT_QOS_1_AT_LEAST_ONCE);
-        printk("mqtt_publish %d\n", rc);
-        if (rc != 0) {
-            break;
-        }
-
-        rc = process_mqtt_and_sleep(&client_ctx, APP_SLEEP_MSECS);
-        if (rc != 0) {
-            break;
-        }
-
-        r = 0;    
-    }
-
-    rc = mqtt_disconnect(&client_ctx);
-    printk("mqtt_disconnect %d\n", rc);
-
-    return r;
-}
-*/
-
-// void main() {
-
-//     int r, i = 0;
-
-//     while (!APP_MAX_ITERATIONS || (i++ < APP_MAX_ITERATIONS)) {
-//         r = publisher();
-
-//         if (!APP_MAX_ITERATIONS) {
-//             k_sleep(K_MSEC(5000));
-//         }
-//     }
-
-//     return r;
-// }
-
-
 void main(void) {
+
+    gpio_button_init();
+    gps_start();
+
+
+    /*
+
     int err;
     uint32_t connect_attempt = 0;
     printk("Starting MQTT connection\n");
+
+    err = certificates_provision();
+    if (err != 0) {
+        printk("Failed to provision certificates\n");
+        return;
+    }
+
+    do {
+        err = modem_configure();
+        if (err) {
+            printk("Retrying in %d seconds\n", CONFIG_LTE_CONNECT_RETRY_DELAY_S);
+            k_sleep(K_SECONDS(CONFIG_LTE_CONNECT_RETRY_DELAY_S));
+        }
+    } while(err);
 
     err = client_init(&client_ctx);
     if (err != 0) {
@@ -480,5 +423,6 @@ do_connect:
         printk("Could not disconnect MQTT client: %d\n", err);
     }
     goto do_connect;
+    */
 }
 

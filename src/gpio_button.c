@@ -22,10 +22,10 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {
 static struct gpio_callback button_cb_data;
 
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+    printk("Button pressed! :)\n");
 }
 
-void test(void) {
+void gpio_button_init(void) {
     int ret;
 
     if(!device_is_ready(button.port)) {

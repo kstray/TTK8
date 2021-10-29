@@ -1,0 +1,36 @@
+&feather_spi {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	sck-pin = <20>;
+	mosi-pin = <21>;
+	miso-pin = <22>;
+    cs-gpios = <&gpio0 0 GPIO_ACTIVE_LOW>;
+
+    ssd16xx: ssd16xxfb@0 {
+        compatible = "solomon,ssd16xxfb";
+        status = "okay";
+        label = "SSD16XX";
+        spi-max-frequency = < 4000000 >;
+        reg = < 0 >;
+        height = < 122 >;
+        width = < 250 >;
+        pp-height-bits = < 8 >;
+        pp-width-bits = < 8 >;
+        reset-gpios = < &gpio0 2 GPIO_ACTIVE_LOW >;
+        dc-gpios = < &gpio0 1 GPIO_ACTIVE_LOW >;
+        busy-gpios = < &gpio0 3 GPIO_ACTIVE_HIGH >;
+        gdv = [ 10 0a ];
+        sdv = [ 19 ];
+        vcom = < 0xa8 >;
+        border-waveform = < 0x71 >;
+        lut-initial = [ 22 55 AA 55 AA 55 AA 11
+                        00 00 00 00 00 00 00 00
+                        1E 1E 1E 1E 1E 1E 1E 1E
+                        01 00 00 00 00 ];
+        lut-default = [ 18 00 00 00 00 00 00 00
+                        00 00 00 00 00 00 00 00
+                        0F 01 00 00 00 00 00 00
+                        00 00 00 00 00 ];   
+    };
+};
+

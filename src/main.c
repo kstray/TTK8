@@ -335,31 +335,7 @@ static int modem_configure(void) {
     return 0;
 }
 
-enum corner {
-    TOP_LEFT,
-    TOP_RIGHT,
-    BOTTOM_RIGHT,
-    BOTTOM_LEFT
-};
 
-typedef void (*fill_buffer)(enum corner corner, uint8_t grey, uint8_t *buf, size_t buf_size);
-
-
-static void fill_buffer_mono(enum corner corner, uint8_t grey, uint8_t *buf, size_t buf_size) {
-    uint16_t color;
-    switch (corner)
-    {
-    case BOTTOM_LEFT:
-        color = (grey & 0x01u) ? 0xFFu : 0x00u;
-        break;
-    
-    default:
-        color = 0;
-        break;
-    }
-
-    memset(buf, color, buf_size);
-}
 
 #if DT_NODE_HAS_STATUS(DT_INST(0, solomon_ssd16xxfb), okay)
 #define DISPLAY_DEV_NAME DT_LABEL(DT_INST(0, solomon_ssd16xxfb))
@@ -367,14 +343,11 @@ static void fill_buffer_mono(enum corner corner, uint8_t grey, uint8_t *buf, siz
 
 void main(void) {
 
-    size_t x, y, rect_w, rect_h, h_step, scale, grey_count;
     uint8_t *buf;
-    int32_t grey_scale_sleep;
     const struct device *dev;
     struct display_capabilities capabilities;
     struct display_buffer_descriptor buf_desc;
     size_t buf_size = 0;
-    fill_buffer fill_buffer_fnc = NULL;
 
     //gpio_button_init();
     //gps_start();
@@ -385,40 +358,14 @@ void main(void) {
         return;
     }
 
+    k_sleep(K_SECONDS(5));
+
     display_get_capabilities(dev, &capabilities);
 
-    if (capabilities.screen_info & SCREEN_INFO_MONO_VTILED) {
-        rect_w = 16;
-        rect_h = 8;
-    } else {
-        rect_w = 2;
-        rect_h = 1;
-    }
+    int h = capabilities.y_resolution;
+    int w = capabilities.x_resolution;
 
-    h_step = rect_h;
-    scale = (capabilities.x_resolution / 8) / rect_h;
-
-    rect_w *= scale;
-    rect_h *= scale;
-
-    if (capabilities.screen_info & SCREEN_INFO_EPD) {
-        grey_scale_sleep = 10000;
-    } else {
-        grey_scale_sleep = 100;
-    }
-
-    buf_size = rect_w * rect_h;
-
-    if (buf_size < (capabilities.x_resolution * h_step)) {
-        buf_size = capabilities.x_resolution * h_step;
-    }
-
-    if (capabilities.current_pixel_format == PIXEL_FORMAT_MONO10) {
-        fill_buffer_fnc = fill_buffer_mono;
-        buf_size /= 8;
-    } else {
-        printk("Unsupported pixel format\n");
-    }
+    buf_size = 64;
 
     buf = k_malloc(buf_size);
     if (buf == NULL) {
@@ -426,57 +373,14 @@ void main(void) {
         return;
     }
 
-    
-
     buf_desc.buf_size = buf_size;
-    buf_desc.pitch = capabilities.x_resolution;
-    buf_desc.width = capabilities.x_resolution;
-    buf_desc.height = capabilities.y_resolution;
+    buf_desc.pitch = 8;
+    buf_desc.width = 8;
+    buf_desc.height = 8;
 
-    (void)memset(buf, 0x00, buf_size);
-    display_write(dev, 0, 0, &buf_desc, buf);
+    (void)memset(buf, 0b01010101, buf_size);
+    display_write(dev, 64, 64, &buf_desc, buf);
 
-    printk("Screen size (h x w): %d x %d\n", capabilities.y_resolution, capabilities.x_resolution);
-
-    
-    /*for (int i = 0; i < capabilities.y_resolution; i += h_step) {
-        printk("Writing to display (for)\n");
-        k_msleep(grey_scale_sleep);
-        display_write(dev, 0, i, &buf_desc, buf);
-    }*/
-    
-
-    buf_desc.pitch = rect_w;
-    buf_desc.width = rect_w;
-    buf_desc.height = rect_h;
-    printk("Buffer description:\n");
-    printk("Width: %d\nHeight: %d\n", buf_desc.width, buf_desc.height);
-
-    fill_buffer_fnc(TOP_LEFT, 0, buf, buf_size);
-    x = 0;
-    y = 0;
-    display_write(dev, x, y, &buf_desc, buf);
-
-    fill_buffer_fnc(BOTTOM_RIGHT, 0, buf, buf_size);
-    x = capabilities.x_resolution - rect_w;
-    y = capabilities.y_resolution - rect_h;
-    display_write(dev, x, y, &buf_desc, buf);
-
-    grey_count = 0;
-    x = 0;
-    y = capabilities.y_resolution - rect_h;
-    /*
-    while(1) {
-        fill_buffer_fnc(BOTTOM_LEFT, grey_count, buf, buf_size);
-        display_write(dev, x, y, &buf_desc, buf);
-        printk("Writing to display (while)\n");
-        ++grey_count;
-        k_msleep(grey_scale_sleep);
-
-        if (grey_count >= 10) {
-            break;
-        }
-    }*
     return;
     
 

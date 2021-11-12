@@ -29,7 +29,7 @@ static struct gpio_callback button_cb_data;
 
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     printk("Button pressed! :)\n");
-    publish(TEST, sizeof(TEST)-1);
+    //publish(TEST, sizeof(TEST)-1);
 }
 
 

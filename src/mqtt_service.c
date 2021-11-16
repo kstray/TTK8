@@ -18,10 +18,10 @@
 #include <data/jwt.h>
 #include <date_time.h>
 
-#include "mqtt.h"
+#include "mqtt_service.h"
 #include "certificates.h"
 #include "keys.h"
-#include "gps_conn.h"
+#include "gps_location.h"
 
 #define PRIMARY_SEC_TAG 10
 #define BACKUP_SEC_TAG  11
@@ -29,7 +29,6 @@
 
 
 K_SEM_DEFINE(time_sem, 0, 1);
-K_MSGQ_DEFINE(mqtt_msgq, sizeof(mqtt_msg_type), 10, 4);
 
 
 // Buffers for MQTT client
@@ -73,14 +72,29 @@ static int certificates_provision(void) {
 }
 
 
-int publish(uint8_t *data, size_t len) {
+int publish_location(double latitude, double longitude) {
     struct mqtt_publish_param param;
+
+    /* Format GPS coordinates to "latitude;longitude" */
+    /* Assuming we only need 6 decimals' precision for coordinates.
+       Latitude can have a value between +/- 90, and longitude
+       can have a value between +/- 180. Since we convert to string,
+       each digit (including any signs) will require 1 byte.
+       Worst case is latitude = -90.000000, longitude = -180.000000,
+       meaning we must account for 10 bytes for latitude + 11 bytes
+       for longitude, as well as 1 byte for the semicolon that
+       separates them. This amounts to 22 bytes. For good measure
+       we set the buffer size to be 32 bytes.
+    */
+    char coordinates[32];
+    sprintf(coordinates, "%.6f;%.6f", latitude, longitude);
+    printk("Coordinates: %s\n", coordinates);
 
     param.message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE;
     param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC;
     param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC);
-    param.message.payload.data = data;
-    param.message.payload.len = len;
+    param.message.payload.data = coordinates;
+    param.message.payload.len = strlen(coordinates);
     param.message_id = sys_rand32_get();
     param.dup_flag = 0;
     param.retain_flag = 0;
@@ -156,7 +170,7 @@ void mqtt_evt_handler(struct mqtt_client *client, const struct mqtt_evt *evt) {
             payload_buf[p->message.payload.len] = '\0';
             printk("Data received: %s\n", payload_buf);
             /* Echo back received data */
-            publish(payload_buf, p->message.payload.len);
+            //publish(payload_buf, p->message.payload.len);
         } else {
             printk("publish_get_payload failed: %d\n", err);
             printk("Disconnecting MQTT client...\n");
@@ -376,109 +390,92 @@ void date_time_evt_handler(const struct date_time_evt *evt) {
 
 
 
-void mqtt_work_handler(struct k_work *work) {
-    char coordinates[10 * sizeof(gps_msg_type)];
-    gps_msg_type gps_msg;
-    k_msgq_get(&gps_msgq, &gps_msg, K_FOREVER);
+void mqtt_service_start() {
 
-    /* Format GPS coordinates to "(latitude;longitude)" */
-    gps_msg.latitude = 63.09124712;
-    gps_msg.longitude = 15.12419553;
-    sprintf(coordinates, "%f;%f", gps_msg.latitude, gps_msg.longitude);
-    printk("Coordinates: %s\n", coordinates);
+    int err;
+    uint32_t connect_attempt = 0;
+    printk("Starting MQTT connection\n");
 
-//     int err;
-//     uint32_t connect_attempt = 0;
-//     printk("Starting MQTT connection\n");
+    err = certificates_provision();
+    if (err != 0) {
+        printk("Failed to provision certificates\n");
+        return;
+    }
 
-//     err = certificates_provision();
-//     if (err != 0) {
-//         printk("Failed to provision certificates\n");
-//         return;
-//     }
+    do {
+        err = modem_configure();
+        if (err) {
+            printk("Retrying in %d seconds\n", CONFIG_LTE_CONNECT_RETRY_DELAY_S);
+            k_sleep(K_SECONDS(CONFIG_LTE_CONNECT_RETRY_DELAY_S));
+        }
+    } while(err);
 
-//     do {
-//         err = modem_configure();
-//         if (err) {
-//             printk("Retrying in %d seconds\n", CONFIG_LTE_CONNECT_RETRY_DELAY_S);
-//             k_sleep(K_SECONDS(CONFIG_LTE_CONNECT_RETRY_DELAY_S));
-//         }
-//     } while(err);
+    /* Sync time */
+    date_time_update_async(date_time_evt_handler);
+    k_sem_take(&time_sem, K_FOREVER);
 
-//     /* Sync time */
-//     date_time_update_async(date_time_evt_handler);
-//     k_sem_take(&time_sem, K_FOREVER);
+    err = client_init(&client_ctx);
+    if (err != 0) {
+        printk("client_init: %d\n", err);
+        return;
+    }
 
-//     err = client_init(&client_ctx);
-//     if (err != 0) {
-//         printk("client_init: %d\n", err);
-//         return;
-//     }
+do_connect:
+    if (connect_attempt++ > 0) {
+        printk("Reconnecting in %d seconds...\n", CONFIG_MQTT_RECONNECT_DELAY_S);
+        k_sleep(K_SECONDS(CONFIG_MQTT_RECONNECT_DELAY_S));
+    }
+    err = mqtt_connect(&client_ctx);
+    if (err != 0) {
+        printk("mqtt_connect %d\n", err);
+        goto do_connect;
+    }
 
-// do_connect:
-//     if (connect_attempt++ > 0) {
-//         printk("Reconnecting in %d seconds...\n", CONFIG_MQTT_RECONNECT_DELAY_S);
-//         k_sleep(K_SECONDS(CONFIG_MQTT_RECONNECT_DELAY_S));
-//     }
-//     err = mqtt_connect(&client_ctx);
-//     if (err != 0) {
-//         printk("mqtt_connect %d\n", err);
-//         goto do_connect;
-//     }
-
-//     err = fds_init(&client_ctx);
-//     if (err != 0) {
-// 		printk("fds_init: %d\n", err);
-// 		return;
-// 	}
+    err = fds_init(&client_ctx);
+    if (err != 0) {
+		printk("fds_init: %d\n", err);
+		return;
+	}
     
 
-//     while(1) {
-//         err = poll(&fds, 1, mqtt_keepalive_time_left(&client_ctx));
-// 		if (err < 0) {
-// 			printk("poll: %d\n", err);
-// 			break;
-// 		}
+    while(1) {
+        err = poll(&fds, 1, mqtt_keepalive_time_left(&client_ctx));
+		if (err < 0) {
+			printk("poll: %d\n", err);
+			break;
+		}
 
-// 		err = mqtt_live(&client_ctx);
-// 		if ((err != 0) && (err != -EAGAIN)) {
-// 			printk("ERROR: mqtt_live: %d\n", err);
-// 			break;
-// 		}
+		err = mqtt_live(&client_ctx);
+		if ((err != 0) && (err != -EAGAIN)) {
+			printk("ERROR: mqtt_live: %d\n", err);
+			break;
+		}
 
-// 		if ((fds.revents & POLLIN) == POLLIN) {
-// 			err = mqtt_input(&client_ctx);
-// 			if (err != 0) {
-// 				printk("mqtt_input: %d\n", err);
-// 				break;
-// 			}
-// 		}
+		if ((fds.revents & POLLIN) == POLLIN) {
+			err = mqtt_input(&client_ctx);
+			if (err != 0) {
+				printk("mqtt_input: %d\n", err);
+				break;
+			}
+		}
 
-// 		if ((fds.revents & POLLERR) == POLLERR) {
-// 			printk("POLLERR\n");
-// 			break;
-// 		}
+		if ((fds.revents & POLLERR) == POLLERR) {
+			printk("POLLERR\n");
+			break;
+		}
 
-// 		if ((fds.revents & POLLNVAL) == POLLNVAL) {
-// 			printk("POLLNVAL\n");
-// 			break;
-// 		}
+		if ((fds.revents & POLLNVAL) == POLLNVAL) {
+			printk("POLLNVAL\n");
+			break;
+		}
 
-//     }
+    }
 
-//     printk("Disconnecting MQTT client...\n");
+    printk("Disconnecting MQTT client...\n");
 
-//     err = mqtt_disconnect(&client_ctx);
-//     if (err) {
-//         printk("Could not disconnect MQTT client: %d\n", err);
-//     }
-//     goto do_connect;
+    err = mqtt_disconnect(&client_ctx);
+    if (err) {
+        printk("Could not disconnect MQTT client: %d\n", err);
+    }
+    goto do_connect;
 }
-
-
-K_WORK_DEFINE(mqtt_work, mqtt_work_handler);
-
-void mqtt_request_weather() {
-    k_work_submit(&mqtt_work);
-}
-

@@ -10,8 +10,7 @@
 #include <drivers/gpio.h>
 
 #include "gpio_button.h"
-#include "gps_conn.h"
-#include "mqtt.h"
+#include "gps_location.h"
 
 
 
@@ -29,7 +28,6 @@ static struct gpio_callback button_cb_data;
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     printk("Button pressed! :)\n");
     gps_request_coordinates();
-    mqtt_request_weather();
 }
 
 

@@ -10,9 +10,9 @@
 #include <drivers/gpio.h>
 
 #include "gpio_button.h"
+#include "gps_conn.h"
 #include "mqtt.h"
 
-#define TEST "63.446827;10.421906"
 
 
 /*
@@ -26,10 +26,10 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {
 static struct gpio_callback button_cb_data;
 
 
-
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     printk("Button pressed! :)\n");
-    //publish(TEST, sizeof(TEST)-1);
+    gps_request_coordinates();
+    mqtt_request_weather();
 }
 
 

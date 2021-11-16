@@ -11,12 +11,6 @@
 #define DISPLAY_DEV_NAME DT_LABEL(DT_INST(0, solomon_ssd16xxfb))
 #endif
 
-// typedef enum weather{
-//     SUNNY,
-//     CLOUDY,
-//     RAINY,
-//     SNOWY
-// };
 
 
 void display_init() {

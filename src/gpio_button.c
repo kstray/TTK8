@@ -24,10 +24,15 @@
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
 static struct gpio_callback button_cb_data;
 
-
-void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+void gpio_work_handler(struct k_work *work) {
     printk("Button pressed! :)\n");
     gps_request_coordinates();
+}
+
+K_WORK_DEFINE(gpio_work, gpio_work_handler);
+
+void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    k_work_submit(&gpio_work);
 }
 
 

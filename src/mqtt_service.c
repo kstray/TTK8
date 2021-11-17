@@ -389,26 +389,27 @@ void date_time_evt_handler(const struct date_time_evt *evt) {
 }
 
 
+int mqtt_service_init() {
+    int err;
+    err = certificates_provision();
+    if (err != 0) {
+        printk("Failed to provision certificates\n");
+        return err;
+    }
+
+    err = modem_configure();
+    if (err) {
+        printk("Retrying in %d seconds\n", CONFIG_LTE_CONNECT_RETRY_DELAY_S);
+        return err;
+    }
+    return 0;
+}
 
 void mqtt_service_start() {
 
     int err;
     uint32_t connect_attempt = 0;
     printk("Starting MQTT connection\n");
-
-    err = certificates_provision();
-    if (err != 0) {
-        printk("Failed to provision certificates\n");
-        return;
-    }
-
-    do {
-        err = modem_configure();
-        if (err) {
-            printk("Retrying in %d seconds\n", CONFIG_LTE_CONNECT_RETRY_DELAY_S);
-            k_sleep(K_SECONDS(CONFIG_LTE_CONNECT_RETRY_DELAY_S));
-        }
-    } while(err);
 
     /* Sync time */
     date_time_update_async(date_time_evt_handler);

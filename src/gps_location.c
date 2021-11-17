@@ -12,28 +12,9 @@
 #include "gps_location.h"
 #include "mqtt_service.h"
 
-#define AT_XSYSTEMMODE      "AT\%XSYSTEMMODE=0,0,1,0"
-#define AT_ACTIVATE_GPS     "AT+CFUN=31"
-
-#define AT_CMD_SIZE(x) (sizeof(x) - 1)
-
-
-static const char *const at_commands[] = {
-    AT_XSYSTEMMODE,
-    AT_ACTIVATE_GPS    
-};
 
 static struct nrf_modem_gnss_pvt_data_frame last_pvt;
 static volatile bool gnss_blocked;
-
-K_SEM_DEFINE(pvt_data_sem, 0, 1);
-K_SEM_DEFINE(lte_ready, 0, 1);
-
-struct k_poll_event events[1] = {
-    K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE,
-                    K_POLL_MODE_NOTIFY_ONLY,
-                    &pvt_data_sem, 0)
-};
 
 
 void gps_work_handler(struct k_work *work) {
@@ -52,25 +33,35 @@ void gps_work_handler(struct k_work *work) {
 K_WORK_DEFINE(gps_work, gps_work_handler);
 
 void gps_request_coordinates() {
-    // if (nrf_modem_gnss_start() != 0) {
-    //     printk("Failed to start GNSS\n");
-    //     return;
-    // }
-    printk("Request coordinates\n");
-    last_pvt.latitude = 63.00123034;
-    last_pvt.longitude = 10.14964319;
-    k_work_submit(&gps_work);
-}
-
-
-static int setup_modem(void) {
-    for (int i = 0; i < ARRAY_SIZE(at_commands); i++) {
-        if (at_cmd_write(at_commands[i], NULL, 0, NULL) != 0) {
-            return -1;
-        }
+    if (nrf_modem_gnss_start() != 0) {
+        printk("Failed to start GNSS\n");
+        return;
     }
-    return 0;
 }
+
+static void print_satellite_stats(struct nrf_modem_gnss_pvt_data_frame *pvt_data)
+{
+	uint8_t tracked   = 0;
+	uint8_t in_fix    = 0;
+	uint8_t unhealthy = 0;
+
+	for (int i = 0; i < NRF_MODEM_GNSS_MAX_SATELLITES; ++i) {
+		if (pvt_data->sv[i].sv > 0) {
+			tracked++;
+
+			if (pvt_data->sv[i].flags & NRF_MODEM_GNSS_SV_FLAG_USED_IN_FIX) {
+				in_fix++;
+			}
+
+			if (pvt_data->sv[i].flags & NRF_MODEM_GNSS_SV_FLAG_UNHEALTHY) {
+				unhealthy++;
+			}
+		}
+	}
+
+	printk("Tracking: %d Using: %d Unhealthy: %d\n", tracked, in_fix, unhealthy);
+}
+
 
 static void gnss_event_handler(int event) {
     int retval;
@@ -82,6 +73,7 @@ static void gnss_event_handler(int event) {
         if (retval == 0 && (last_pvt.flags & NRF_MODEM_GNSS_PVT_FLAG_FIX_VALID)) {
             k_work_submit(&gps_work);
         }
+        print_satellite_stats(&last_pvt);
         break;
     
     case NRF_MODEM_GNSS_EVT_BLOCKED:
@@ -98,10 +90,6 @@ static void gnss_event_handler(int event) {
 }
 
 void gps_init() {
-    if (setup_modem() != 0) {
-        printk("Failed to initialize modem\n");
-        return;
-    }
 
     /* Initialize and configure GNSS */
     if (nrf_modem_gnss_init() != 0) {

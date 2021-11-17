@@ -47,16 +47,14 @@ void display_init() {
         printk("font width %d, font height %d\n", font_width, font_height);
     }
 
-
     cfb_framebuffer_clear(dev, false);
-
 
     err = cfb_framebuffer_set_font(dev, 2);
     if (err) {
         printk("Could not set font, err %d\n", err);
     }
 
-    err = cfb_print(dev, "Trondheim", 8, 8);
+    err = cfb_print(dev, "Press button", 35, 8);
     if (err) {
         printk("Could not display string, err %d\n", err);
     }
@@ -66,12 +64,7 @@ void display_init() {
         printk("Could not set font, err %d\n", err);
     }
 
-    err = cfb_print(dev, "Today", 8, 48);
-    if (err) {
-        printk("Could not display string, err %d\n", err);
-    }
-
-    err = cfb_print(dev, "Tomorrow", 8, 72);
+    err = cfb_print(dev, "to get weather forecast", 10, 40);
     if (err) {
         printk("Could not display string, err %d\n", err);
     }
@@ -81,12 +74,7 @@ void display_init() {
         printk("Could not set font, err %d\n", err);
     }
 
-    err = cfb_print(dev, "3", 200, 48);
-    if (err) {
-        printk("Could not display custom font, err %d\n", err);
-    }
-
-    err = cfb_print(dev, "4", 200, 72);
+    err = cfb_print(dev, "123456", 29, 72);
     if (err) {
         printk("Could not display custom font, err %d\n", err);
     }

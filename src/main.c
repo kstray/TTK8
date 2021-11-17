@@ -15,11 +15,9 @@
 void main(void) {
 
     
-
-    
-    //gps_init();
-    //gpio_button_init();
     display_init();
+    //gps_init();
+    gpio_button_init();
 
 
     //mqtt_service_start();

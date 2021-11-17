@@ -42,7 +42,10 @@ void gps_work_handler(struct k_work *work) {
     double latitude = last_pvt.latitude;
     double longitude = last_pvt.longitude;
 
-    publish_location(latitude, longitude);
+    int err = publish_location(latitude, longitude);
+    if (err != 0) {
+        printk("Could not publish location\n");
+    }
 
 }
 

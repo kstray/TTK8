@@ -22,6 +22,7 @@
 #include "certificates.h"
 #include "keys.h"
 #include "gps_location.h"
+#include "display_ssd16xx.h"
 
 #define PRIMARY_SEC_TAG 10
 #define BACKUP_SEC_TAG  11
@@ -29,6 +30,8 @@
 
 
 K_SEM_DEFINE(time_sem, 0, 1);
+K_SEM_DEFINE(connect_sem, 0, 1);
+K_SEM_DEFINE(tx_sem, 0, 1);
 
 
 // Buffers for MQTT client
@@ -74,6 +77,10 @@ static int certificates_provision(void) {
 
 int publish_location(double latitude, double longitude) {
     struct mqtt_publish_param param;
+    int err;
+
+    k_sem_give(&connect_sem);
+    k_sem_take(&tx_sem, K_FOREVER);
 
     /* Format GPS coordinates to "latitude;longitude" */
     /* Assuming we only need 6 decimals' precision for coordinates.
@@ -99,7 +106,13 @@ int publish_location(double latitude, double longitude) {
     param.dup_flag = 0;
     param.retain_flag = 0;
 
-    return mqtt_publish(&client_ctx, &param);
+    err = mqtt_publish(&client_ctx, &param);
+    if (err != 0) {
+        printk("MQTT publish error %d\n", err);
+    }
+
+    k_sem_give(&tx_sem);
+    return err;
 }
 
 
@@ -169,6 +182,7 @@ void mqtt_evt_handler(struct mqtt_client *client, const struct mqtt_evt *evt) {
         if (err >= 0) {
             payload_buf[p->message.payload.len] = '\0';
             printk("Data received: %s\n", payload_buf);
+            display_print_weather(payload_buf);
             /* Echo back received data */
             //publish(payload_buf, p->message.payload.len);
         } else {
@@ -367,22 +381,6 @@ static int fds_init(struct mqtt_client *client) {
 }
 
 
-static int modem_configure(void) {
-    printk("Disabling PSM and eDRX\n");
-    lte_lc_psm_req(false);
-    lte_lc_edrx_req(false);
-
-    int err;
-    printk("LTE Link Connecting...\n");
-    err = lte_lc_init_and_connect();
-    if (err) {
-        printk("Failed to establish LTE connection: %d\n", err);
-        return err;
-    }
-    printk("LTE Link Connected/n");
-
-    return 0;
-}
 
 void date_time_evt_handler(const struct date_time_evt *evt) {
     k_sem_give(&time_sem);
@@ -397,16 +395,12 @@ int mqtt_service_init() {
         return err;
     }
 
-    err = modem_configure();
-    if (err) {
-        printk("Retrying in %d seconds\n", CONFIG_LTE_CONNECT_RETRY_DELAY_S);
-        return err;
-    }
     return 0;
 }
 
 void mqtt_service_start() {
-
+    k_sem_take(&connect_sem, K_FOREVER);
+    
     int err;
     uint32_t connect_attempt = 0;
     printk("Starting MQTT connection\n");
@@ -438,14 +432,16 @@ do_connect:
 		return;
 	}
     
-
+    printk("MQTT init complete\n");
     while(1) {
+        k_sem_give(&tx_sem);
         err = poll(&fds, 1, mqtt_keepalive_time_left(&client_ctx));
 		if (err < 0) {
 			printk("poll: %d\n", err);
 			break;
 		}
 
+        k_sem_take(&tx_sem, K_FOREVER);
 		err = mqtt_live(&client_ctx);
 		if ((err != 0) && (err != -EAGAIN)) {
 			printk("ERROR: mqtt_live: %d\n", err);

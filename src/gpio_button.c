@@ -10,7 +10,9 @@
 #include <drivers/gpio.h>
 
 #include "gpio_button.h"
+#include "gpio_led.h"
 #include "gps_location.h"
+#include "display_ssd16xx.h"
 
 
 
@@ -26,6 +28,7 @@ static struct gpio_callback button_cb_data;
 
 void gpio_work_handler(struct k_work *work) {
     printk("Button pressed! :)\n");
+    gpio_led_on_off(0);
     gps_request_coordinates();
 }
 
@@ -60,8 +63,6 @@ void gpio_button_init(void) {
     gpio_add_callback(button.port, &button_cb_data);
     printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
-
-    printk("Press the button! :)\n");
 
 }
 

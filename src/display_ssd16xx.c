@@ -11,14 +11,12 @@
 #define DISPLAY_DEV_NAME DT_LABEL(DT_INST(0, solomon_ssd16xxfb))
 #endif
 
+static const struct device *dev;
 
 
 void display_init() {
 
-    const struct device *dev;
-
-    uint16_t rows;
-    uint8_t ppt, font_width, font_height;
+    uint8_t font_width, font_height;
 
 
     dev = device_get_binding(DISPLAY_DEV_NAME);
@@ -46,6 +44,29 @@ void display_init() {
         }
         printk("font width %d, font height %d\n", font_width, font_height);
     }
+
+    cfb_framebuffer_clear(dev, false);
+
+    err = cfb_framebuffer_set_font(dev, 1);
+    if (err) {
+        printk("Could not set font, err %d\n", err);
+    }
+
+    err = cfb_print(dev, "Booting system...", 35, 48);
+    if (err) {
+        printk("Could not display string, err %d\n", err);
+    }
+
+    cfb_framebuffer_finalize(dev);
+
+    return;
+}
+
+
+
+void display_print_placeholder() {
+
+    int err;
 
     cfb_framebuffer_clear(dev, false);
 
@@ -78,6 +99,56 @@ void display_init() {
     if (err) {
         printk("Could not display custom font, err %d\n", err);
     }
+
+    cfb_framebuffer_finalize(dev);
+
+    return;
+}
+
+
+void display_print_weather(char *data) {
+
+    int err;
+
+    char *weather = strtok(data, ";");
+    char *temperature = strtok(NULL, ";");
+    char *location = strtok(NULL, ";");
+
+    cfb_framebuffer_clear(dev, false);
+
+    err = cfb_framebuffer_set_font(dev, 2);
+    if (err) {
+        printk("Could not set font, err %d\n", err);
+    }
+
+    err = cfb_print(dev, location, 35, 8);
+    if (err) {
+        printk("Could not display string, err %d\n", err);
+    }
+
+    err = cfb_framebuffer_set_font(dev, 1);
+    if (err) {
+        printk("Could not set font, err %d\n", err);
+    }
+
+    err = cfb_print(dev, "Temp:", 35, 32);
+    if (err) {
+        printk("Could not display string, err %d\n", err);
+    }
+
+    err = cfb_print(dev, temperature, 125, 32);
+    if (err) {
+        printk("Could not display string, err %d\n", err);
+    }
+
+    
+
+    err = cfb_print(dev, weather, 35, 48);
+    if (err) {
+        printk("Could not display string, err %d\n", err);
+    }
+
+    
 
     cfb_framebuffer_finalize(dev);
 

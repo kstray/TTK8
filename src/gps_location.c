@@ -7,10 +7,10 @@
 #include <zephyr.h>
 #include <nrf_modem_gnss.h>
 #include <string.h>
-#include <modem/at_cmd.h>
 
 #include "gps_location.h"
 #include "mqtt_service.h"
+#include "gpio_led.h"
 
 
 static struct nrf_modem_gnss_pvt_data_frame last_pvt;
@@ -66,14 +66,20 @@ static void print_satellite_stats(struct nrf_modem_gnss_pvt_data_frame *pvt_data
 static void gnss_event_handler(int event) {
     int retval;
 
+    static int count = 0;
+
     switch (event)
     {
     case NRF_MODEM_GNSS_EVT_PVT:
+        count++;
         retval = nrf_modem_gnss_read(&last_pvt, sizeof(last_pvt), NRF_MODEM_GNSS_DATA_PVT);
         if (retval == 0 && (last_pvt.flags & NRF_MODEM_GNSS_PVT_FLAG_FIX_VALID)) {
             k_work_submit(&gps_work);
+            gpio_led_on_off(0);
+            return;
         }
         print_satellite_stats(&last_pvt);
+        gpio_led_on_off(count%2);
         break;
     
     case NRF_MODEM_GNSS_EVT_BLOCKED:

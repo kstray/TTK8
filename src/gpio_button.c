@@ -35,7 +35,7 @@ void gpio_work_handler(struct k_work *work) {
 K_WORK_DELAYABLE_DEFINE(gpio_work, gpio_work_handler);
 
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    k_work_schedule(&gpio_work, K_MSEC(100));
+    k_work_schedule(&gpio_work, K_MSEC(300));
 }
 
 

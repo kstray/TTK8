@@ -20,7 +20,6 @@ void main(void) {
     display_init();
     gpio_led_init();
     mqtt_service_init();
-    gps_init();
     gpio_button_init();
 
     /* Init LTE connection */
@@ -35,6 +34,8 @@ void main(void) {
         printk("Failed to establish LTE connection: %d\n", err);
     }
     printk("LTE Link Connected/n");
+
+    gps_init();
 
     /* System ready to start */
     display_print_placeholder();

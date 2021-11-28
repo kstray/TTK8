@@ -111,33 +111,36 @@ char* id_to_icon(char *id) {
        from openweathermap.org to weather icon
        supported by weather font.
     */
-    if (strcmp(id, "01d") == 0) {
+    char buf[3];
+    memcpy(buf, id, 2);
+    buf[2] = '\0';
+    if (strcmp(buf, "01") == 0) {
         /* Clear sky */
         return "1";
-    } else if (strcmp(id, "02d") == 0) {
+    } else if (strcmp(buf, "02") == 0) {
         /* Few clouds */
         return "2";
-    } else if (strcmp(id, "03d") == 0) {
+    } else if (strcmp(buf, "03") == 0) {
         /* Scattered clouds */
         return "3";
-    } else if (strcmp(id, "04d") == 0) {
+    } else if (strcmp(buf, "04") == 0) {
         /* Broken clouds */
         return "3";
-    } else if (strcmp(id, "09d") == 0) {
+    } else if (strcmp(buf, "09") == 0) {
         /* Shower rain */
         return "4";
-    } else if (strcmp(id, "10d") == 0) {
+    } else if (strcmp(buf, "10") == 0) {
         /* Rain */
         return "4";
-    } else if (strcmp(id, "11d") == 0) {
+    } else if (strcmp(buf, "11") == 0) {
         /* Thunderstorm */
         return "6";
-    } else if (strcmp(id, "13d") == 0) {
+    } else if (strcmp(buf, "13") == 0) {
         /* Snow */
         return "5";
     } else {
         printk("Unsupported weather icon ID %s\n", id);
-        return "";
+        return NULL;
     }
 }
 
@@ -208,21 +211,17 @@ void display_print_weather(char *data) {
 
     /* Convert icon id to weather icon */
     char *icon = id_to_icon(icon_id);
-    if (strcmp(icon, "") == 0) {
-        return;
-    }
+    if (icon) {
+        err = cfb_framebuffer_set_font(dev, 0);
+        if (err) {
+            printk("Could not set font, err %d\n", err);
+        }
 
-    err = cfb_framebuffer_set_font(dev, 0);
-    if (err) {
-        printk("Could not set font, err %d\n", err);
+        err = cfb_print(dev, icon, 170, 64);
+        if (err) {
+            printk("Could not display string, err %d\n", err);
+        }
     }
-
-    err = cfb_print(dev, icon, 170, 64);
-    if (err) {
-        printk("Could not display string, err %d\n", err);
-    }
-
-    
 
     cfb_framebuffer_finalize(dev);
 

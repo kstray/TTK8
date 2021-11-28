@@ -49,6 +49,8 @@ static struct sockaddr_storage broker;
 // File descrciptor
 static struct pollfd fds;
 
+bool connected = false;
+
 
 static int certificates_provision(void) {
     int err = 0;
@@ -157,6 +159,7 @@ void mqtt_evt_handler(struct mqtt_client *client, const struct mqtt_evt *evt) {
             printk("MQTT connection failed %d\n", evt->result);
             break;
         }
+        connected = true;
         printk("MQTT client connected!\n");
         subscribe();
         break;
@@ -434,14 +437,20 @@ do_connect:
     
     printk("MQTT init complete\n");
     while(1) {
-        k_sem_give(&tx_sem);
+        bool shared = false;
+        if (connected) {
+            k_sem_give(&tx_sem);
+            shared = true;
+        }
         err = poll(&fds, 1, mqtt_keepalive_time_left(&client_ctx));
 		if (err < 0) {
-			printk("poll: %d\n", err);
-			break;
+		    printk("poll: %d\n", err);
+		    break;
 		}
-
-        k_sem_take(&tx_sem, K_FOREVER);
+        if (shared) {
+            k_sem_take(&tx_sem, K_FOREVER);
+        }
+        
 		err = mqtt_live(&client_ctx);
 		if ((err != 0) && (err != -EAGAIN)) {
 			printk("ERROR: mqtt_live: %d\n", err);

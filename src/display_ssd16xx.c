@@ -106,13 +106,68 @@ void display_print_placeholder() {
 }
 
 
+char* id_to_icon(char *id) {
+    /* Function for converting icon ID received
+       from openweathermap.org to weather icon
+       supported by weather font.
+    */
+    if (strcmp(id, "01d") == 0) {
+        /* Clear sky */
+        return "1";
+    } else if (strcmp(id, "02d") == 0) {
+        /* Few clouds */
+        return "2";
+    } else if (strcmp(id, "03d") == 0) {
+        /* Scattered clouds */
+        return "3";
+    } else if (strcmp(id, "04d") == 0) {
+        /* Broken clouds */
+        return "3";
+    } else if (strcmp(id, "09d") == 0) {
+        /* Shower rain */
+        return "4";
+    } else if (strcmp(id, "10d") == 0) {
+        /* Rain */
+        return "4";
+    } else if (strcmp(id, "11d") == 0) {
+        /* Thunderstorm */
+        return "6";
+    } else if (strcmp(id, "13d") == 0) {
+        /* Snow */
+        return "5";
+    } else {
+        printk("Unsupported weather icon ID %s\n", id);
+        return "";
+    }
+}
+
+
 void display_print_weather(char *data) {
 
     int err;
 
     char *weather = strtok(data, ";");
+    char *icon_id = strtok(NULL, ";");
     char *temperature = strtok(NULL, ";");
     char *location = strtok(NULL, ";");
+
+    if (weather == NULL || icon_id == NULL || temperature == NULL || location == NULL) {
+        printk("Could not extract weather tokens\n");
+        
+        cfb_framebuffer_clear(dev, false);
+
+        err = cfb_framebuffer_set_font(dev, 1);
+        if (err) {
+            printk("Could not set font, err %d\n", err);
+        }
+
+        err = cfb_print(dev, "Error, try again", 35, 48);
+        if (err) {
+            printk("Could not display string, err %d\n", err);
+        }
+        cfb_framebuffer_finalize(dev);
+        return;
+    }
 
     cfb_framebuffer_clear(dev, false);
 
@@ -121,7 +176,7 @@ void display_print_weather(char *data) {
         printk("Could not set font, err %d\n", err);
     }
 
-    err = cfb_print(dev, location, 35, 8);
+    err = cfb_print(dev, location, 35, 16);
     if (err) {
         printk("Could not display string, err %d\n", err);
     }
@@ -131,19 +186,38 @@ void display_print_weather(char *data) {
         printk("Could not set font, err %d\n", err);
     }
 
-    err = cfb_print(dev, "Temp:", 35, 32);
+    err = cfb_print(dev, "Temp:", 35, 48);
     if (err) {
         printk("Could not display string, err %d\n", err);
     }
 
-    err = cfb_print(dev, temperature, 125, 32);
+    err = cfb_print(dev, temperature, 161, 48);
     if (err) {
         printk("Could not display string, err %d\n", err);
     }
 
-    
+    err = cfb_framebuffer_set_font(dev, 1);
+    if (err) {
+        printk("Could not set font, err %d\n", err);
+    }
 
-    err = cfb_print(dev, weather, 35, 48);
+    err = cfb_print(dev, weather, 35, 72);
+    if (err) {
+        printk("Could not display string, err %d\n", err);
+    }
+
+    /* Convert icon id to weather icon */
+    char *icon = id_to_icon(icon_id);
+    if (strcmp(icon, "") == 0) {
+        return;
+    }
+
+    err = cfb_framebuffer_set_font(dev, 0);
+    if (err) {
+        printk("Could not set font, err %d\n", err);
+    }
+
+    err = cfb_print(dev, icon, 170, 64);
     if (err) {
         printk("Could not display string, err %d\n", err);
     }

@@ -38,6 +38,7 @@ K_SEM_DEFINE(tx_sem, 0, 1);
 static uint8_t rx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
 static uint8_t tx_buffer[CONFIG_MQTT_MESSAGE_BUFFER_SIZE];
 static uint8_t payload_buf[CONFIG_MQTT_PAYLOAD_BUFFER_SIZE];
+static uint8_t msg_id_buf[11];
 static uint8_t jwt_buf[256];
 
 // MQTT client context
@@ -84,7 +85,14 @@ int publish_location(double latitude, double longitude) {
     k_sem_give(&connect_sem);
     k_sem_take(&tx_sem, K_FOREVER);
 
-    /* Format GPS coordinates to "latitude;longitude" */
+    param.message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE;
+    param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC;
+    param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC);
+    param.message_id = sys_rand32_get();
+    param.dup_flag = 0;
+    param.retain_flag = 0;
+
+    /* Format GPS coordinates to "latitude;longitude;msg_id" */
     /* Assuming we only need 6 decimals' precision for coordinates.
        Latitude can have a value between +/- 90, and longitude
        can have a value between +/- 180. Since we convert to string,
@@ -92,21 +100,17 @@ int publish_location(double latitude, double longitude) {
        Worst case is latitude = -90.000000, longitude = -180.000000,
        meaning we must account for 10 bytes for latitude + 11 bytes
        for longitude, as well as 1 byte for the semicolon that
-       separates them. This amounts to 22 bytes. For good measure
-       we set the buffer size to be 32 bytes.
+       separates them. This amounts to 22 bytes.
+       The message ID buffer requires an additional 11 bytes.
+       For good measure we set the buffer size to be 64 bytes.
     */
-    char coordinates[32];
-    sprintf(coordinates, "%.6f;%.6f", latitude, longitude);
-    printk("Coordinates: %s\n", coordinates);
+    char coordinates[64];
 
-    param.message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE;
-    param.message.topic.topic.utf8 = CONFIG_MQTT_PUB_TOPIC;
-    param.message.topic.topic.size = strlen(CONFIG_MQTT_PUB_TOPIC);
+    sprintf(msg_id_buf, "%d", param.message_id);
+    sprintf(coordinates, "%.6f;%.6f;%d", latitude, longitude, param.message_id);
+    printk("Coordinates: %s\n", coordinates);
     param.message.payload.data = coordinates;
     param.message.payload.len = strlen(coordinates);
-    param.message_id = sys_rand32_get();
-    param.dup_flag = 0;
-    param.retain_flag = 0;
 
     err = mqtt_publish(&client_ctx, &param);
     if (err != 0) {
@@ -185,9 +189,24 @@ void mqtt_evt_handler(struct mqtt_client *client, const struct mqtt_evt *evt) {
         if (err >= 0) {
             payload_buf[p->message.payload.len] = '\0';
             printk("Data received: %s\n", payload_buf);
-            display_print_weather(payload_buf);
-            /* Echo back received data */
-            //publish(payload_buf, p->message.payload.len);
+
+            char *msg_id = strtok(payload_buf, ";");
+            char *weather = strtok(NULL, ";");
+            char *icon_id = strtok(NULL, ";");
+            char *temperature = strtok(NULL, ";");
+            char *location = strtok(NULL, ";");
+
+            if (!weather || !icon_id || !temperature || !location) {
+                printk("Could not extract weather tokens\n");
+                return;
+            }
+
+            if (strcmp(msg_id_buf, msg_id) == 0) {
+                display_print_weather(weather, icon_id, temperature, location);
+            } else {
+                printk("%s not equal %s", msg_id_buf, msg_id);
+            }
+
         } else {
             printk("publish_get_payload failed: %d\n", err);
             printk("Disconnecting MQTT client...\n");
@@ -390,6 +409,24 @@ void date_time_evt_handler(const struct date_time_evt *evt) {
 }
 
 
+K_SEM_DEFINE(lte_ready, 0, 1);
+
+static void lte_lc_event_handler(const struct lte_lc_evt *const evt)
+{
+	switch (evt->type) {
+	case LTE_LC_EVT_NW_REG_STATUS:
+		if ((evt->nw_reg_status == LTE_LC_NW_REG_REGISTERED_HOME) ||
+		    (evt->nw_reg_status == LTE_LC_NW_REG_REGISTERED_ROAMING)) {
+			printk("Connected to LTE network\n");
+			k_sem_give(&lte_ready);
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
 int mqtt_service_init() {
     int err;
     err = certificates_provision();
@@ -403,8 +440,19 @@ int mqtt_service_init() {
 
 void mqtt_service_start() {
     k_sem_take(&connect_sem, K_FOREVER);
-    
     int err;
+
+    lte_lc_register_handler(lte_lc_event_handler);
+
+    err = lte_lc_func_mode_set(LTE_LC_FUNC_MODE_ACTIVATE_LTE);
+    if (err) {
+        printk("Could not activate LTE\n");
+        return;
+    }
+
+
+    k_sem_take(&lte_ready, K_FOREVER);
+    
     uint32_t connect_attempt = 0;
     printk("Starting MQTT connection\n");
 

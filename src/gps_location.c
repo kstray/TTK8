@@ -37,6 +37,12 @@ void gps_request_coordinates() {
         printk("Failed to start GNSS\n");
         return;
     }
+
+    int err = nrf_modem_gnss_prio_mode_enable();
+    if (err != 0) {
+        printk("priority mode error\n");
+        return;
+    }
 }
 
 static void print_satellite_stats(struct nrf_modem_gnss_pvt_data_frame *pvt_data)

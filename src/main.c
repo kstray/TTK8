@@ -23,19 +23,27 @@ void main(void) {
     gpio_button_init();
 
     /* Init LTE connection */
-    printk("Disabling PSM and eDRX\n");
-    lte_lc_psm_req(false);
-    lte_lc_edrx_req(false);
 
     int err;
     printk("LTE Link Connecting...\n");
-    err = lte_lc_init_and_connect();
+    err = lte_lc_init();
     if (err) {
-        printk("Failed to establish LTE connection: %d\n", err);
+        printk("Failed to init LTE connection: %d\n", err);
+        return;
     }
-    printk("LTE Link Connected/n");
+    printk("LTE init\n");
 
+    err = lte_lc_func_mode_set(LTE_LC_FUNC_MODE_ACTIVATE_GNSS);
+    if (err) {
+        printk("Could not set func mode\n");
+        return;
+    }
+
+    printk("LTE connected\n");
+    
     gps_init();
+
+    k_sleep(K_SECONDS(7));
 
     /* System ready to start */
     display_print_placeholder();

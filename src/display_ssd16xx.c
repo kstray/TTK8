@@ -3,6 +3,7 @@
 #include <drivers/display.h>
 #include <display/cfb.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "cfb_font_weather.h"
 
@@ -145,32 +146,9 @@ char* id_to_icon(char *id) {
 }
 
 
-void display_print_weather(char *data) {
+void display_print_weather(char *weather, char *icon_id, char *temperature, char *location) {
 
     int err;
-
-    char *weather = strtok(data, ";");
-    char *icon_id = strtok(NULL, ";");
-    char *temperature = strtok(NULL, ";");
-    char *location = strtok(NULL, ";");
-
-    if (weather == NULL || icon_id == NULL || temperature == NULL || location == NULL) {
-        printk("Could not extract weather tokens\n");
-        
-        cfb_framebuffer_clear(dev, false);
-
-        err = cfb_framebuffer_set_font(dev, 1);
-        if (err) {
-            printk("Could not set font, err %d\n", err);
-        }
-
-        err = cfb_print(dev, "Error, try again", 35, 48);
-        if (err) {
-            printk("Could not display string, err %d\n", err);
-        }
-        cfb_framebuffer_finalize(dev);
-        return;
-    }
 
     cfb_framebuffer_clear(dev, false);
 
